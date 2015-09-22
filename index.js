@@ -15,7 +15,12 @@ module.exports = {
     isCloud: function() {
         return !global.hasOwnProperty('dev$') && !global.hasOwnProperty('ddb');
     },
-    createApp: function(appID, setupApp) {
+    createApp: function(appID, requireAuth, setupApp) {
+        if(arguments.length == 2) {
+            setupApp = arguments[1];
+            requireAuth = false;
+        }
+
         if(this.isCloud()) {
             return {
                 setup: function(app, utils) {
@@ -25,8 +30,10 @@ module.exports = {
                     var accountServiceClient = utils.accountServiceClient;
                     var userServiceClient = utils.userServiceClient;
                     var relayEvents = new RelayEventsExchange.Subscriber(utils.messageBrokerConnectionConfig);
-                    devicejs = devicejs(relayRouter, relayEvents);
-                    devicedb = devicedb(relayRouter);
+                    if(typeof devicejs === 'function') {
+                        devicejs = devicejs(relayRouter, relayEvents);
+                        devicedb = devicedb(relayRouter);
+                    }
 
                     function moveAccessTokenToReq(req, res, next) {
                         try {
@@ -73,15 +80,40 @@ module.exports = {
                     }
 
                     console.log('SETP CLOUD APP 2');
-                    app.use(cookieParser(), moveAccessTokenToReq, authenticate, getDeviceJSAPIKeyFromUserID, function(req, res, next) {
-                        var devicejsAPIKey = req.devicejsAPIKey;
-                        var dev$ = devicejs.createClient(devicejsAPIKey);
-                        var ddb = devicedb.createClient(devicejsAPIKey);
 
-                        req.dev$ = dev$;
-                        req.ddb = ddb;
-                        next();
-                    });
+                    app.use(cookieParser());
+
+                    if(requireAuth) {
+                        requireAuth.forEach(function(route) {
+                            if(route.method == 'get' ||
+                               route.method == 'post' ||
+                               route.method == 'put' || 
+                               route.method == 'delete') {
+                                var method = app[route.method].bind(app);
+                            }
+                            else {
+                                var method = app.use.bind(app);
+                            }
+
+                            function attachDevHandles(req, res, next) {
+                                var devicejsAPIKey = req.devicejsAPIKey;
+                                var dev$ = devicejs.createClient(devicejsAPIKey);
+                                var ddb = devicedb.createClient(devicejsAPIKey);
+
+                                req.dev$ = dev$;
+                                req.ddb = ddb;
+                                next();
+                            }
+
+                            if(route.path) {
+                                method(route.path, moveAccessTokenToReq, authenticate, getDeviceJSAPIKeyFromUserID, attachDevHandles);
+                            }
+                            else {
+                                method(moveAccessTokenToReq, authenticate, getDeviceJSAPIKeyFromUserID, attachDevHandles);
+                            }
+
+                        });
+                    }
 
                     setupApp(app);
                 },
@@ -91,12 +123,18 @@ module.exports = {
         else {
             var app = express();
             var server = http.createServer(app);
-            app.use(cookieParser(), function(req, res, next) {
-                req.dev$ = dev$;
+
+            app.use(cookieParser());
+            app.use(function(req, res, next) {
+                    req.dev$ = dev$;
                 req.ddb = ddb;
                 next();
             });
 
+            if(!requireAuth) {
+                requireAuth = [ ];
+            }
+            
             setupApp(app);
 
             var appServer = dev$.selectByType('AppServer');
@@ -110,8 +148,21 @@ module.exports = {
 
                     if(response.receivedResponse) {
                         var portNumber = response.response.result;
-                        console.log('Listening on port', portNumber);
-                        server.listen(portNumber);
+
+                        Promise.all(requireAuth.map(function(route) {
+                            if(route.path instanceof RegExp) {
+                                return dev$.selectByID(resourceID).call('useAuthentication', appID, route.method, route.path.source, true);
+                            }
+                            else {
+                                console.log(route);
+                                return dev$.selectByID(resourceID).call('useAuthentication', appID, route.method, route.path, false);
+                            }
+                        })).then(function() {
+                            console.log('Listening on port', portNumber);
+                            server.listen(portNumber);
+                        }, function(error) {
+                            console.log('Error starting app', error);
+                        });
                     }
                     else {
                         console.error('Could not register APIProxy with app server');
