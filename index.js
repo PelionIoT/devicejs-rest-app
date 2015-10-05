@@ -115,7 +115,7 @@ module.exports = {
                         });
                     }
 
-                    setupApp(app);
+                    setupApp(app, utils);
                 },
                 appID: appID
             }
