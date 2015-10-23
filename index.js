@@ -1,6 +1,7 @@
 var cookieParser = require('cookie-parser');
 var express = require('express');
 var http = require('http');
+var path = require('path');
 
 var RelayEventsExchange;
 var devicejs;
@@ -142,8 +143,19 @@ module.exports = {
 
             app.use(cookieParser());
             app.use(function(req, res, next) {
-                    req.dev$ = dev$;
+                req.dev$ = dev$;
                 req.ddb = ddb;
+                var orig_redirect = res.redirect;
+                // overload redirect so it works
+                // http://expressjs.com/api.html#res.redirect
+                res.redirect = function() {
+                    var n = 0;
+                    if(arguments.length>1) {
+                        n = 1;
+                    }
+                    arguments[n] = path.join('/',appID,arguments[n]);
+                    orig_redirect.apply(this,arguments);
+                }
                 next();
             });
 
@@ -184,7 +196,7 @@ module.exports = {
                                     log.debug('devicejs-rest-app: socket.io listen()ing');
                                 if(typeof appReadyCB === 'function') {
                                     appReadyCB(null,{
-                                        socketio: io
+                                        socketio: io, baseUrl: '/'+appID
                                     });
                                 }
                             }
