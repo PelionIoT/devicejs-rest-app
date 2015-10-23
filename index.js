@@ -15,16 +15,31 @@ module.exports = {
     isCloud: function() {
         return !global.hasOwnProperty('dev$') && !global.hasOwnProperty('ddb');
     },
-    createApp: function(appID, requireAuth, setupApp) {
+    /**
+     *
+     * @param appID
+     * @param requireAuth*
+     * @param setupAppCB a callback to setup the App, prior to web server starting
+     * @param appReadyCB* a callback
+     * @param opts*
+     * @returns {*}
+     */
+    createApp: function(appID, requireAuth, setupAppCB, appReadyCB, opts) {
         if(arguments.length == 2) {
-            setupApp = arguments[1];
+            setupAppCB = arguments[1];
             requireAuth = false;
+        }
+        if(!opts) {
+            opts = {};
+        }
+        if(!opts.local_interface) {
+            opts.local_interface = '127.0.0.1'; // default to running just on loop back, Proxy will handle all else.
         }
 
         if(this.isCloud()) {
             return {
                 setup: function(app, utils) {
-                    console.log('SETP CLOUD APP');
+                    console.log('SETUP CLOUD APP');
                     var authenticate = utils.authenticate;
                     var relayRouter = utils.relayRouter;
                     var accountServiceClient = utils.accountServiceClient;
@@ -79,7 +94,7 @@ module.exports = {
                         });
                     }
 
-                    console.log('SETP CLOUD APP 2');
+                    console.log('SETUP CLOUD APP 2');
 
                     app.use(cookieParser());
 
@@ -115,14 +130,15 @@ module.exports = {
                         });
                     }
 
-                    setupApp(app, utils);
+                    setupAppCB(app, utils);
                 },
                 appID: appID
             }
         }
         else {
             var app = express();
-            var server = http.createServer(app);
+            var server = http.Server(app);
+            var io, sockio;
 
             app.use(cookieParser());
             app.use(function(req, res, next) {
@@ -135,11 +151,11 @@ module.exports = {
                 requireAuth = [ ];
             }
             
-            setupApp(app);
+            setupAppCB(app,express);
 
             var appServer = dev$.selectByType('AppServer');
 
-            console.log('look for app server');
+            log.debug('look for app server');
             appServer.discover();
             appServer.on('discover', function(resourceID) {
                 appServer.stopDiscovering();
@@ -158,17 +174,30 @@ module.exports = {
                                 return dev$.selectByID(resourceID).call('useAuthentication', appID, route.method, route.path, false);
                             }
                         })).then(function() {
-                            console.log('Listening on port', portNumber);
-                            server.listen(portNumber);
+                            log.success('App',appID,'http server on',opts.local_interface,':',portNumber);
+                            server.listen(portNumber,opts.local_interface);
+                            if(opts.need_websocket) {
+                                // upgrade server to web sockets, as needed...
+                                sockio = require('socket.io');
+                                io = sockio(server);
+                                if(io)
+                                    log.debug('devicejs-rest-app: socket.io listen()ing');
+                                if(typeof appReadyCB === 'function') {
+                                    appReadyCB(null,{
+                                        socketio: io
+                                    });
+                                }
+                            }
                         }, function(error) {
-                            console.log('Error starting app', error);
+                            log.error('Error starting app', error);
+                            appReadyCB(error);
                         });
                     }
                     else {
-                        console.error('Could not register APIProxy with app server');
+                        log.error('Could not register APIProxy with app server');
                     }
                 }, function(error) {
-                    console.log('ERROR', error);
+                    log.error('Error in devicejs-rest-app setup', error);
                 });
             });
 
