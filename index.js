@@ -2,6 +2,7 @@ var cookieParser = require('cookie-parser');
 var express = require('express');
 var http = require('http');
 var path = require('path');
+var ERRS = require('devicejs-common-error');
 
 var RelayEventsExchange;
 var devicejs;
@@ -72,14 +73,14 @@ module.exports = {
                                 return accountServiceClient.getRelays(accounts[0]);
                             }
                             else {
-                                throw { code: 500, reason: 'No account tied to user' };
+                                throw { code: ERRS.HTTP.shortCode['NO_ACCOUNT'].status, reason: ERRS.HTTP.shortCode['NO_ACCOUNT'].statusText };
                             }
                         }).then(function(relays) {
                             if(relays.length == 1) {
                                 return relays[0];
                             }
                             else {
-                                throw { code: 500, reason: 'No DeviceJS API key tied to account' };
+                                throw { ERRS.HTTP.shortCode['NO_API_KEY'].status, reason: ERRS.HTTP.shortCode['NO_API_KEY'].statusText };
                             }
                         });
                     }
