@@ -80,7 +80,7 @@ module.exports = {
                                 return relays[0];
                             }
                             else {
-                                throw { ERRS.HTTP.shortCode['NO_API_KEY'].status, reason: ERRS.HTTP.shortCode['NO_API_KEY'].statusText };
+                                throw { code: ERRS.HTTP.shortCode['NO_API_KEY'].status, reason: ERRS.HTTP.shortCode['NO_API_KEY'].statusText };
                             }
                         });
                     }
