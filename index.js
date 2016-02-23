@@ -41,7 +41,6 @@ module.exports = {
         if(this.isCloud()) {
             return {
                 setup: function(app, utils) {
-                    console.log('SETUP CLOUD APP');
                     var authenticate = utils.authenticate;
                     var relayRouter = utils.relayRouter;
                     var accountServiceClient = utils.accountServiceClient;
@@ -95,8 +94,6 @@ module.exports = {
                             res.status(error.code).send(error.reason);
                         });
                     }
-
-                    console.log('SETUP CLOUD APP 2');
 
                     app.use(cookieParser());
 
@@ -183,7 +180,6 @@ module.exports = {
                                 return dev$.selectByID(resourceID).call('useAuthentication', appID, route.method, route.path.source, true);
                             }
                             else {
-                                console.log(route);
                                 return dev$.selectByID(resourceID).call('useAuthentication', appID, route.method, route.path, false);
                             }
                         })).then(function() {
