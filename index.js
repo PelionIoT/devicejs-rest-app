@@ -6,9 +6,14 @@ const http = require('http')
 const path = require('path')
 
 module.exports = {
+    middleware: global.devicejsRestAppMiddleware,
+    utils: global.devicejsRestAppUtils,
     setCloudUtils: function(utils, middleware) {
         this.utils = utils
         this.middleware = middleware
+        
+        global.devicejsRestAppMiddleware = middleware
+        global.devicejsRestAppUtils = utils
     },
     isCloud: function() {
         return !global.hasOwnProperty('dev$') && !global.hasOwnProperty('ddb')
