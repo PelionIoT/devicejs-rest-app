@@ -1,21 +1,17 @@
-var cookieParser = require('cookie-parser');
-var express = require('express');
-var http = require('http');
-var path = require('path');
-var ERRS = require('devicejs-common-error');
+'use strict'
 
-var RelayEventsExchange;
-var devicejs;
-var devicedb;
+const cookieParser = require('cookie-parser')
+const express = require('express')
+const http = require('http')
+const path = require('path')
 
 module.exports = {
-    set: function(RlyEventsExchg, devicejsProxy) {
-        RelayEventsExchange = RlyEventsExchg;
-        devicejs = devicejsProxy.devicejs;
-        devicedb = devicejsProxy.devicedb;
+    setCloudUtils: function(utils, middleware) {
+        this.utils = utils
+        this.middleware = middleware
     },
     isCloud: function() {
-        return !global.hasOwnProperty('dev$') && !global.hasOwnProperty('ddb');
+        return !global.hasOwnProperty('dev$') && !global.hasOwnProperty('ddb')
     },
     /**
      *
@@ -28,113 +24,73 @@ module.exports = {
      */
     createApp: function(appID, requireAuth, setupAppCB, appReadyCB, opts) {
         if(arguments.length == 2) {
-            setupAppCB = arguments[1];
-            requireAuth = false;
+            setupAppCB = arguments[1]
+            requireAuth = false
         }
-        if(!opts) {
-            opts = {};
-        }
-        if(!opts.local_interface) {
-            opts.local_interface = '127.0.0.1'; // default to running just on loop back, Proxy will handle all else.
-        }
-
+        
         if(this.isCloud()) {
+            let router = express.Router()
+            let middleware = this.middleware
+            let utils = this.utils
+            let authenticate = middleware.authenticate
+
+            router.use(cookieParser())
+
+            if(requireAuth) {
+                for(let route of requireAuth) {
+                    let method
+                    
+                    if(route.method == 'get' ||
+                        route.method == 'post' ||
+                        route.method == 'put' || 
+                        route.method == 'delete') {
+                        method = router[route.method].bind(router)
+                    }
+                    else {
+                        method = router.use.bind(router)
+                    }
+
+                    function attachDevHandles(req, res, next) {
+                        let accounts = req.accounts
+                        
+                        if(accounts.length != 1) {
+                            res.status(401).send('Not authorized to access any accounts')
+                            
+                            return
+                        }
+                        
+                        req.dev$ = utils.getDeviceJSClient(accounts[0])
+                        req.ddb = utils.getDeviceDBClient(accounts[1])
+                        
+                        next()
+                    }
+
+                    if(route.path) {
+                        method(route.path, authenticate, attachDevHandles)
+                    }
+                    else {
+                        method(authenticate, attachDevHandles)
+                    }
+
+                }
+            }
+
+            setupAppCB(router)
+            
             return {
-                setup: function(app, utils) {
-                    var authenticate = utils.authenticate;
-                    var relayRouter = utils.relayRouter;
-                    var accountServiceClient = utils.accountServiceClient;
-                    var userServiceClient = utils.userServiceClient;
-                    var relayEvents = new RelayEventsExchange.Subscriber(utils.messageBrokerConnectionConfig);
-                    if(typeof devicejs === 'function') {
-                        devicejs = devicejs(relayRouter, relayEvents);
-                        devicedb = devicedb(relayRouter);
-                    }
-
-                    function moveAccessTokenToReq(req, res, next) {
-                        try {
-                            var access_token = req.cookies.access_token;
-
-                            if(typeof access_token === 'string') {
-                                req.headers.authorization = 'Bearer ' + access_token;
-                            }
-                        }
-                        catch(e) {
-                            next(e);
-                        }
-
-                        next();
-                    }
-
-                    function _getDeviceJSAPIKeyFromUserID(userID) {
-                        return userServiceClient.getAccounts(userID).then(function(accounts) {
-                            if(accounts.length == 1) {
-                                return accountServiceClient.getRelays(accounts[0]);
-                            }
-                            else {
-                                throw { code: ERRS.HTTP.shortCode['NO_ACCOUNT'].status, reason: ERRS.HTTP.shortCode['NO_ACCOUNT'].statusText };
-                            }
-                        }).then(function(relays) {
-                            if(relays.length == 1) {
-                                return relays[0];
-                            }
-                            else {
-                                throw { code: ERRS.HTTP.shortCode['NO_API_KEY'].status, reason: ERRS.HTTP.shortCode['NO_API_KEY'].statusText };
-                            }
-                        });
-                    }
-
-                    function getDeviceJSAPIKeyFromUserID(req, res, next) {
-                        var userID = req.user.userID;
-
-                        _getDeviceJSAPIKeyFromUserID(userID).then(function(devicejsAPIKey) {
-                            req.devicejsAPIKey = devicejsAPIKey;
-                            next();
-                        }, function(error) {
-                            res.status(error.code).send(error.reason);
-                        });
-                    }
-
-                    app.use(cookieParser());
-
-                    if(requireAuth) {
-                        requireAuth.forEach(function(route) {
-                            if(route.method == 'get' ||
-                               route.method == 'post' ||
-                               route.method == 'put' || 
-                               route.method == 'delete') {
-                                var method = app[route.method].bind(app);
-                            }
-                            else {
-                                var method = app.use.bind(app);
-                            }
-
-                            function attachDevHandles(req, res, next) {
-                                var devicejsAPIKey = req.devicejsAPIKey;
-                                var dev$ = devicejs.createClient(devicejsAPIKey);
-                                var ddb = devicedb.createClient(devicejsAPIKey);
-
-                                req.dev$ = dev$;
-                                req.ddb = ddb;
-                                next();
-                            }
-
-                            if(route.path) {
-                                method(route.path, moveAccessTokenToReq, authenticate, getDeviceJSAPIKeyFromUserID, attachDevHandles);
-                            }
-                            else {
-                                method(moveAccessTokenToReq, authenticate, getDeviceJSAPIKeyFromUserID, attachDevHandles);
-                            }
-
-                        });
-                    }
-
-                    setupAppCB(app, utils);
-                },
+                router: router,
                 appID: appID
             }
         }
         else {
+            if(!opts) {
+                opts = { }
+            }
+            
+            if(!opts.local_interface) {
+                opts.local_interface = '127.0.0.1' // default to running just on loop back, Proxy will handle all else.
+            }
+            
             var app = express();
             var server = http.Server(app);
             var io, sockio;
@@ -206,12 +162,9 @@ module.exports = {
                         log.error('Could not register APIProxy with app server');
                     }
                 }, function(error) {
-                    log.error('Error in devicejs-rest-app setup', error);
-                });
-            });
-
-            return {
-            };
+                    log.error('Error in devicejs-rest-app setup', error)
+                })
+            })
         }
     }
-};
+}
