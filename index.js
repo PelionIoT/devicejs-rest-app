@@ -65,7 +65,7 @@ module.exports = {
                         }
                         
                         req.dev$ = utils.getDeviceJSClient(accounts[0])
-                        req.ddb = utils.getDeviceDBClient(accounts[1])
+                        req.ddb = utils.getDeviceDBClient(accounts[0])
                         
                         next()
                     }
