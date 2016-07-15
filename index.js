@@ -164,7 +164,7 @@ module.exports = {
                         });
                     }
                     else {
-                        log.error('Could not register APIProxy with app server');
+                        log.error('Could not register ', appID, ' with app server');
                     }
                 }, function(error) {
                     log.error('Error in devicejs-rest-app setup', error)
