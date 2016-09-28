@@ -38,6 +38,7 @@ module.exports = {
             let middleware = this.middleware
             let utils = this.utils
             let authenticate = middleware.authenticate
+            let unauthorizedIfNotLoggedIn = middleware.unauthorizedIfNotLoggedIn
 
             router.use(cookieParser())
 
@@ -71,10 +72,10 @@ module.exports = {
                     }
 
                     if(route.path) {
-                        method(route.path, authenticate, attachDevHandles)
+                        method(route.path, authenticate, unauthorizedIfNotLoggedIn, attachDevHandles)
                     }
                     else {
-                        method(authenticate, attachDevHandles)
+                        method(authenticate, unauthorizedIfNotLoggedIn, attachDevHandles)
                     }
 
                 }
